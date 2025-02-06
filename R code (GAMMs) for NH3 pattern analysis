@@ -25,14 +25,14 @@ df$WindSpeed <- as.numeric(df$WindSpeed)
 # Remove NA values
 df_clean <- na.omit(df)
 
-# 🔹 Modify block sampling (80% sampling within each block)
+# Modify block sampling (80% sampling within each block)
 set.seed(123)  # Set seed for reproducibility
 df_sampled <- df_clean %>%
   group_by(Block) %>%
   sample_frac(0.8, replace = FALSE) %>%  # Sample 80% probability within each block
   ungroup()
 
-# 🔹 Check Precipitation values
+# Check Precipitation values
 print(table(df_sampled$Precipitation))  # Verify if all Precipitation values are included
 
 # Apply GAMM model (using block-sampled data)
@@ -53,7 +53,7 @@ summary(gamm_model$lme)
 # Add predicted values
 df_sampled$Predicted <- predict(gamm_model$gam, newdata = df_sampled, type = "response")
 
-# 🔹 Stepwise data partitioning
+# Stepwise data partitioning
 first_precip_1_time <- min(df_sampled$Time[df_sampled$Precipitation == 1], na.rm = TRUE)
 df_precip_0 <- df_sampled %>% filter(Precipitation == 0)
 df_post_0 <- df_sampled %>% filter(Post == 0 & Time < first_precip_1_time)
@@ -68,7 +68,7 @@ df_post_4 <- df_sampled %>% filter(Post == 4)
 df_precip_5 <- df_sampled %>% filter(Precipitation == 5)
 df_post_5 <- df_sampled %>% filter(Post == 5)
 
-# 🔹 Generate plot
+# Generate plot
 ggplot() +
   # Observed NH3 data points (black)
   geom_point(data = df_sampled, aes(x = Time, y = NH3_emission), color = "black", alpha = 0.5) +  
