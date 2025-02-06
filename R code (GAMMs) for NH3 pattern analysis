@@ -1,0 +1,124 @@
+# Load required packages
+library(mgcv)       # GAMM model
+library(ggplot2)    # Data visualization
+library(nlme)       # Mixed models
+library(itsadug)    # GAMM model evaluation
+library(dplyr)      # Data preprocessing
+library(readxl)     # Read Excel data
+library(lmtest)     # Autocorrelation test (Breusch-Godfrey test)
+
+# Load data
+df <- read_excel("C:/Users/leefa/Desktop/Feedyard P (GAMM.Day).xlsx", sheet = "Set 1")
+
+# Convert time format and create blocks (24-hour intervals)
+df$Time <- as.POSIXct(df$Time, format="%Y-%m-%d %H:%M:%S")
+df$Block <- floor(as.numeric(df$Time) / (24 * 3600))  # Create blocks in 24-hour units
+
+# Convert variables
+df$Day <- as.numeric(df$Day)
+df$Precipitation <- as.factor(df$Precipitation)  # Convert Precipitation to factor
+df$Post <- as.factor(df$Post)  # Convert post-precipitation events to factor
+df$Hour <- as.numeric(df$Hour)
+df$Temperature <- as.numeric(df$Temperature)
+df$WindSpeed <- as.numeric(df$WindSpeed)
+
+# Remove NA values
+df_clean <- na.omit(df)
+
+# 🔹 Modify block sampling (80% sampling within each block)
+set.seed(123)  # Set seed for reproducibility
+df_sampled <- df_clean %>%
+  group_by(Block) %>%
+  sample_frac(0.8, replace = FALSE) %>%  # Sample 80% probability within each block
+  ungroup()
+
+# 🔹 Check Precipitation values
+print(table(df_sampled$Precipitation))  # Verify if all Precipitation values are included
+
+# Apply GAMM model (using block-sampled data)
+gamm_model <- gamm(
+  NH3_emission ~ Precipitation + Post + s(as.numeric(Hour), bs="cc", k=10) + 
+    s(WindSpeed) + s(Temperature) + te(Day, bs="tp"), 
+  family = Gamma(link = "log"),
+  random = list(Day = ~1),
+  correlation = corARMA(p = 2, q = 1, form = ~ as.numeric(Time)),  
+  data = df_sampled, 
+  na.action = na.omit
+)
+
+# Output model results
+summary(gamm_model$gam)
+summary(gamm_model$lme)
+
+# Add predicted values
+df_sampled$Predicted <- predict(gamm_model$gam, newdata = df_sampled, type = "response")
+
+# 🔹 Stepwise data partitioning
+first_precip_1_time <- min(df_sampled$Time[df_sampled$Precipitation == 1], na.rm = TRUE)
+df_precip_0 <- df_sampled %>% filter(Precipitation == 0)
+df_post_0 <- df_sampled %>% filter(Post == 0 & Time < first_precip_1_time)
+df_precip_1 <- df_sampled %>% filter(Precipitation == 1 & Time >= first_precip_1_time)  
+df_post_1 <- df_sampled %>% filter(Post == 1)
+df_precip_2 <- df_sampled %>% filter(Precipitation == 2)
+df_post_2 <- df_sampled %>% filter(Post == 2)
+df_precip_3 <- df_sampled %>% filter(Precipitation == 3)
+df_post_3 <- df_sampled %>% filter(Post == 3)
+df_precip_4 <- df_sampled %>% filter(Precipitation == 4)
+df_post_4 <- df_sampled %>% filter(Post == 4)
+df_precip_5 <- df_sampled %>% filter(Precipitation == 5)
+df_post_5 <- df_sampled %>% filter(Post == 5)
+
+# 🔹 Generate plot
+ggplot() +
+  # Observed NH3 data points (black)
+  geom_point(data = df_sampled, aes(x = Time, y = NH3_emission), color = "black", alpha = 0.5) +  
+
+  # Overall predicted line (entire range maintained, blue dotted)
+  geom_line(data = df_sampled, aes(x = Time, y = Predicted), color = "blue", size = 1, linetype = "dotted") +  
+
+  # Precipitation 0 predicted trend line (black dashed, with yellowish shade)
+  geom_smooth(data = df_precip_0, aes(x = Time, y = Predicted, group = as.factor(Precipitation)), 
+              method = "loess", size = 1, se = TRUE, fill = "gray", alpha = 0.3, linetype = "dashed", color = "black") +
+
+  # Post 0 predicted line (before Precipitation 1 starts, black smooth)
+  geom_smooth(data = df_post_0, aes(x = Time, y = Predicted), color = "black", size = 1, se = FALSE) +
+
+  # Precipitation 1 predicted line (red dashed)
+  geom_line(data = df_precip_1, aes(x = Time, y = Predicted), color = "red", size = 1, linetype = "dashed") +
+  geom_smooth(data = df_post_1, aes(x = Time, y = Predicted), color = "red", size = 1, se = FALSE) +
+
+  # Precipitation 2 predicted line (dark green dashed)
+  geom_line(data = df_precip_2, aes(x = Time, y = Predicted), color = "darkgreen", size = 1, linetype = "dashed") +
+  geom_smooth(data = df_post_2, aes(x = Time, y = Predicted), color = "darkgreen", size = 1, se = FALSE) +
+
+  # Precipitation 3 predicted line (dark yellow dashed)
+  geom_line(data = df_precip_3, aes(x = Time, y = Predicted), color = "darkgoldenrod2", size = 1, linetype = "dashed") +
+  geom_smooth(data = df_post_3, aes(x = Time, y = Predicted), color = "darkgoldenrod2", size = 1, se = FALSE) +
+
+  # Precipitation 4 predicted line (purple dashed)
+  geom_line(data = df_precip_4, aes(x = Time, y = Predicted), color = "purple", size = 1, linetype = "dashed") +
+  geom_smooth(data = df_post_4, aes(x = Time, y = Predicted), color = "purple", size = 1, se = FALSE) +
+
+  # Precipitation 5 predicted line (orange dashed)
+  geom_line(data = df_precip_5, aes(x = Time, y = Predicted), color = "orange", size = 1, linetype = "dashed") +
+  geom_smooth(data = df_post_5, aes(x = Time, y = Predicted), color = "orange", size = 1, se = FALSE) +
+
+  # Set graph style
+  labs(title = "NH3 Emission Trend with Precipitations", 
+       x = "Time", 
+       y = "NH3 Emission",
+       color = "Precipitation & Post") +  
+  theme_minimal() +
+  scale_color_manual(name = "Precipitation & Post", 
+                     values = c("black", "blue", "red", "darkgreen", "darkgoldenrod2", "purple", "orange"))  
+
+# Perform autocorrelation test (Breusch-Godfrey Test)
+residuals_gamm <- residuals(gamm_model$gam, type = "deviance")
+
+# Apply bgtest()
+lm_model <- lm(residuals_gamm ~ Hour + Temperature + WindSpeed + Precipitation + Post, data = df_sampled)
+bg_test <- tryCatch(
+  bgtest(lm_model, order = 1),
+  error = function(e) NA
+)
+print(bg_test)
